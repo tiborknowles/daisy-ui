@@ -10,6 +10,12 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  define: {
+    'process.env': {},
+    'process.versions': { node: '' },
+    'process.platform': '""',
+    'process': { env: {}, versions: { node: '' }, platform: '' }
+  },
   build: {
     outDir: 'dist',
     sourcemap: true,

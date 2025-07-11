@@ -4,8 +4,6 @@
  * projects/warner-music-staging/locations/us-central1/reasoningEngines/8470637580386304
  */
 
-import { GoogleAuth } from 'google-auth-library';
-
 interface AgentEngineConfig {
   projectId: string;
   location: string;
@@ -31,7 +29,6 @@ interface StreamEvent {
 
 export class DaisyOrchestratorClient {
   private config: AgentEngineConfig;
-  private auth: GoogleAuth | null = null;
   
   constructor() {
     this.config = {
@@ -40,20 +37,13 @@ export class DaisyOrchestratorClient {
       agentEngineId: import.meta.env.VITE_AGENT_ENGINE_ID || '8470637580386304',
       displayName: import.meta.env.VITE_AGENT_DISPLAY_NAME || 'daisy-orchestrator'
     };
-    
-    // Only initialize GoogleAuth on server-side
-    if (typeof window === 'undefined') {
-      this.auth = new GoogleAuth({
-        scopes: ['https://www.googleapis.com/auth/cloud-platform']
-      });
-    }
   }
   
   /**
    * Query the DaisyAI Orchestrator
    * @param message - User's query
    * @param userId - Unique user identifier
-   * @param idToken - Firebase Auth ID token (for client-side calls)
+   * @param idToken - Firebase Auth ID token (required for authentication)
    * @returns Async iterable of response chunks
    */
   async *queryOrchestrator(
@@ -63,18 +53,12 @@ export class DaisyOrchestratorClient {
   ): AsyncIterable<string> {
     const endpoint = `${import.meta.env.VITE_AGENT_ENGINE_ENDPOINT || 'https://us-central1-aiplatform.googleapis.com'}/v1beta1/projects/${this.config.projectId}/locations/${this.config.location}/reasoningEngines/${this.config.agentEngineId}:streamQuery`;
     
-    // Get authentication token
-    let authToken: string;
-    if (idToken) {
-      // Client-side: use Firebase ID token
-      authToken = idToken;
-    } else if (this.auth) {
-      // Server-side: use service account
-      const client = await this.auth.getClient();
-      const { token } = await client.getAccessToken();
-      authToken = token!;
-    } else {
-      throw new Error('No authentication method available');
+    // For browser clients, we'll use Firebase Auth tokens
+    // If no token is provided, the request will fail with 401
+    const authToken = idToken || '';
+    
+    if (!authToken) {
+      throw new Error('Authentication required. Please sign in.');
     }
     
     const requestBody = {
@@ -149,7 +133,8 @@ export class DaisyOrchestratorClient {
                 yield `\n[${data.metadata.specialist} specialist activated]\n`;
               }
             } catch (e) {
-              console.error('Failed to parse SSE data:', e);
+              // Skip invalid JSON lines
+              console.warn('Failed to parse SSE data:', e);
             }
           }
         }
@@ -160,21 +145,9 @@ export class DaisyOrchestratorClient {
   }
   
   /**
-   * Get agent configuration details
+   * Get agent configuration
    */
-  getConfig() {
-    return {
-      ...this.config,
-      description: 'A base ReAct agent built with Google\'s Agent Development Kit (ADK)',
-      capabilities: [
-        'Neo4j Knowledge Graph (428 music industry entities)',
-        'Business Scenarios (534 AI use cases and strategies)',
-        'Gemini 2.0 Flash for reasoning and synthesis'
-      ],
-      pythonVersion: '3.12',
-      framework: 'google-adk',
-      createTime: new Date('2025-01-10T09:52:49Z'),
-      updateTime: new Date('2025-01-10T14:03:35Z')
-    };
+  getConfig(): AgentEngineConfig {
+    return { ...this.config };
   }
 }
