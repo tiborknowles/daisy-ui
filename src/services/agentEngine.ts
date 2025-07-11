@@ -37,7 +37,7 @@ interface AgentEngineConfig {
 
 export class DaisyOrchestratorClient {
   private config: AgentEngineConfig;
-  private functions = getFunctions(firebaseApp);
+  private functions = getFunctions(firebaseApp, 'us-central1');
   private chatFunction = httpsCallable<ChatRequest, ChatResponse>(
     this.functions, 
     'chatWithDaisy'

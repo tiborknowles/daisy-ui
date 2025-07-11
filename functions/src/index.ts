@@ -40,10 +40,11 @@ type ChatOutput = z.infer<typeof ChatOutputSchema>;
 
 // Export the chat function with authentication
 export const chatWithDaisy = onCall({
-  cors: true,
+  cors: ['https://daisy-rocks.web.app', 'https://daisy-rocks.firebaseapp.com', 'http://localhost:3000'],
   maxInstances: 100,
   timeoutSeconds: 540,
   memory: '1GiB',
+  region: 'us-central1',
 }, async (request) => {
   const startTime = Date.now();
 
