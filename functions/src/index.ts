@@ -8,8 +8,13 @@ const auth = new GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/cloud-platform"],
 });
 
+interface QueryData {
+  message: string;
+  agentEngineId: string;
+}
+
 export const queryAgentEngine = functions.https.onCall(
-  async (data, context) => {
+  async (data: QueryData, context) => {
     // Verify the user is authenticated
     if (!context.auth) {
       throw new functions.https.HttpsError(
