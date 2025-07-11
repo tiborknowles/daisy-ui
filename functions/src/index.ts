@@ -1,7 +1,6 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import {GoogleAuth} from "google-auth-library";
-import {CallableContext} from "firebase-functions/v1/https";
 
 admin.initializeApp();
 
@@ -15,7 +14,7 @@ interface QueryData {
 }
 
 export const queryAgentEngine = functions.https.onCall(
-  async (data: QueryData, context: CallableContext) => {
+  async (data: QueryData, context: functions.https.CallableContext) => {
     // Verify the user is authenticated
     if (!context.auth) {
       throw new functions.https.HttpsError(
