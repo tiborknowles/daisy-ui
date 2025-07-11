@@ -74,7 +74,6 @@ node_modules/
 
 # Vite
 dist/
-out/
 .vite/
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*

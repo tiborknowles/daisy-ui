@@ -3,12 +3,21 @@
   "description": "Chat interface for DaisyAI Orchestrator Agent Engine",
   "icon": "https://raw.githubusercontent.com/firebase/firebase-studio-templates/main/icons/firebase.png",
   "publisher": "DaisyAI",
+  "tags": ["react", "vite", "typescript", "firebase", "ai", "agent"],
   "params": [
     {
       "id": "projectId",
       "name": "Firebase Project ID",
       "type": "text",
+      "description": "Your Firebase project ID",
       "required": true
+    },
+    {
+      "id": "agentEngineId",
+      "name": "Agent Engine ID",
+      "type": "text",
+      "description": "Your Vertex AI Agent Engine ID (default: 8470637580386304)",
+      "default": "8470637580386304"
     }
   ]
 }

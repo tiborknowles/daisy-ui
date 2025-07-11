@@ -11,11 +11,15 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'out',
+    outDir: 'dist',
     sourcemap: true,
   },
   server: {
     port: 3000,
     host: true,
+    headers: {
+      "Cross-Origin-Embedder-Policy": "unsafe-none",
+      "Cross-Origin-Opener-Policy": "same-origin-allow-popups"
+    },
   },
 });
