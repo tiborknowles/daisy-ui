@@ -1,9 +1,7 @@
 /**
  * Authentication Context for DaisyAI Chat UI
- * Handles Firebase Auth and provides user state across the app
+ * Following Firebase Studio template patterns
  */
-
-'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { 
@@ -12,27 +10,13 @@ import {
   signInAnonymously,
   onAuthStateChanged,
   signOut as firebaseSignOut,
-  User 
+  User,
+  Auth 
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
-interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  signInWithGoogle: () => Promise<void>;
-  signInAnonymous: () => Promise<void>;
-  signOut: () => Promise<void>;
-  getIdToken: () => Promise<string | null>;
-}
-
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  loading: true,
-  signInWithGoogle: async () => {},
-  signInAnonymous: async () => {},
-  signOut: async () => {},
-  getIdToken: async () => null
-});
+// Create Auth Context
+const AuthContext = createContext<Auth>(auth);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

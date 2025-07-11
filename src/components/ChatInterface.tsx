@@ -8,9 +8,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { DaisyOrchestratorClient } from '@/services/agentEngine';
-import { MessageList } from './MessageList';
-import { MessageInput } from './MessageInput';
-import { ChatHeader } from './ChatHeader';
+import { MessageList } from './messagelist';
+import { MessageInput } from './messageinput';
+import { ChatHeader } from './chatheader';
 
 export interface Message {
   id: string;

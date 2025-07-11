@@ -1,0 +1,14 @@
+{
+  "name": "DaisyAI Chat UI",
+  "description": "Chat interface for DaisyAI Orchestrator Agent Engine",
+  "icon": "https://raw.githubusercontent.com/firebase/firebase-studio-templates/main/icons/firebase.png",
+  "publisher": "DaisyAI",
+  "params": [
+    {
+      "id": "projectId",
+      "name": "Firebase Project ID",
+      "type": "text",
+      "required": true
+    }
+  ]
+}
