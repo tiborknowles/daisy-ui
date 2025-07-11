@@ -1,8 +1,10 @@
 /**
  * DaisyAI Orchestrator Agent Engine Client
- * Connects to the deployed agent at:
- * projects/warner-music-staging/locations/us-central1/reasoningEngines/8470637580386304
+ * Connects to the deployed agent via Cloud Functions
  */
+
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app } from '@/lib/firebase';
 
 interface AgentEngineConfig {
   projectId: string;
@@ -11,7 +13,8 @@ interface AgentEngineConfig {
   displayName: string;
 }
 
-interface StreamEvent {
+interface AgentResponse {
+  output?: string;
   content?: {
     parts?: Array<{
       text?: string;
@@ -29,6 +32,7 @@ interface StreamEvent {
 
 export class DaisyOrchestratorClient {
   private config: AgentEngineConfig;
+  private functions = getFunctions(app);
   
   constructor() {
     this.config = {
@@ -40,10 +44,10 @@ export class DaisyOrchestratorClient {
   }
   
   /**
-   * Query the DaisyAI Orchestrator
+   * Query the DaisyAI Orchestrator via Cloud Function
    * @param message - User's query
    * @param userId - Unique user identifier
-   * @param idToken - Firebase Auth ID token (required for authentication)
+   * @param idToken - Firebase Auth ID token (not used with Cloud Functions)
    * @returns Async iterable of response chunks
    */
   async *queryOrchestrator(
@@ -51,96 +55,49 @@ export class DaisyOrchestratorClient {
     userId: string,
     idToken?: string
   ): AsyncIterable<string> {
-    const endpoint = `${import.meta.env.VITE_AGENT_ENGINE_ENDPOINT || 'https://us-central1-aiplatform.googleapis.com'}/v1beta1/projects/${this.config.projectId}/locations/${this.config.location}/reasoningEngines/${this.config.agentEngineId}:streamQuery`;
-    
-    // For browser clients, we'll use Firebase Auth tokens
-    // If no token is provided, the request will fail with 401
-    const authToken = idToken || '';
-    
-    if (!authToken) {
-      throw new Error('Authentication required. Please sign in.');
-    }
-    
-    const requestBody = {
-      input: message,
-      config: {
-        user_id: userId,
-        session_id: `session-${Date.now()}`,
-        // Enable all specialists
-        enable_neo4j: true,
-        enable_scenarios: true
-      }
-    };
-    
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody)
-    });
-    
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Agent Engine error: ${response.status} - ${error}`);
-    }
-    
-    // Stream the response
-    yield* this.streamResponse(response);
-  }
-  
-  /**
-   * Parse streaming response from Agent Engine
-   */
-  private async *streamResponse(response: Response): AsyncIterable<string> {
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('No response body');
-    
-    const decoder = new TextDecoder();
-    let buffer = '';
-    
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6)) as StreamEvent;
-              
-              // Extract text from the response
-              if (data.content?.parts) {
-                for (const part of data.content.parts) {
-                  if (part.text) {
-                    yield part.text;
-                  }
-                  
-                  // Optionally handle tool calls
-                  if (part.functionCall) {
-                    yield `\n[Consulting ${part.functionCall.name}...]\n`;
-                  }
-                }
-              }
-              
-              // Handle metadata (which specialist is being used)
-              if (data.metadata?.specialist) {
-                yield `\n[${data.metadata.specialist} specialist activated]\n`;
-              }
-            } catch (e) {
-              // Skip invalid JSON lines
-              console.warn('Failed to parse SSE data:', e);
-            }
+      // Call the Cloud Function
+      const queryAgentEngine = httpsCallable<
+        { message: string; agentEngineId: string },
+        AgentResponse
+      >(this.functions, 'queryAgentEngine');
+      
+      const result = await queryAgentEngine({
+        message,
+        agentEngineId: this.config.agentEngineId
+      });
+      
+      const response = result.data;
+      
+      // Handle the response
+      if (response.output) {
+        yield response.output;
+      } else if (response.content?.parts) {
+        for (const part of response.content.parts) {
+          if (part.text) {
+            yield part.text;
+          }
+          if (part.functionCall) {
+            yield `\n[Consulting ${part.functionCall.name}...]\n`;
           }
         }
       }
-    } finally {
-      reader.releaseLock();
+      
+      // Handle metadata
+      if (response.metadata?.specialist) {
+        yield `\n[${response.metadata.specialist} specialist activated]\n`;
+      }
+    } catch (error: any) {
+      console.error('Error querying orchestrator:', error);
+      
+      // Extract user-friendly error message
+      if (error.code === 'functions/unauthenticated') {
+        throw new Error('Please sign in to use the chat.');
+      } else if (error.code === 'functions/invalid-argument') {
+        throw new Error('Invalid request. Please try again.');
+      } else {
+        throw new Error('Failed to connect to the orchestrator. Please try again.');
+      }
     }
   }
   
