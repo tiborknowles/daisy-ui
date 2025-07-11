@@ -10,13 +10,21 @@ import {
   signInAnonymously,
   onAuthStateChanged,
   signOut as firebaseSignOut,
-  User,
-  Auth 
+  User
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
-// Create Auth Context
-const AuthContext = createContext<Auth>(auth);
+// Create Auth Context with proper typing
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  signInWithGoogle: () => Promise<void>;
+  signInAnonymous: () => Promise<void>;
+  signOut: () => Promise<void>;
+  getIdToken: () => Promise<string | null>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
