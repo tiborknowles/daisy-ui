@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "daisy-rocks",
     "public": "dist",
     "ignore": [
       "firebase.json",
