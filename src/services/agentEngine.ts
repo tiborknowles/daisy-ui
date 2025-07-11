@@ -1,9 +1,9 @@
 /**
- * DaisyAI Orchestrator Client - Streamlined with Firebase Genkit
- * Production-ready implementation with proper error handling
+ * DaisyAI Orchestrator Client - Direct HTTP implementation
+ * Works around Firebase callable function CORS issues
  */
 
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getAuth } from 'firebase/auth';
 import { firebaseApp } from '@/lib/firebase';
 
 interface ChatRequest {
@@ -18,15 +18,6 @@ interface ChatRequest {
   };
 }
 
-interface ChatResponse {
-  response: string;
-  metadata?: {
-    model: string;
-    tokensUsed?: number;
-    processingTime: number;
-    sessionId: string;
-  };
-}
 
 interface AgentEngineConfig {
   projectId: string;
@@ -37,11 +28,8 @@ interface AgentEngineConfig {
 
 export class DaisyOrchestratorClient {
   private config: AgentEngineConfig;
-  private functions = getFunctions(firebaseApp, 'us-central1');
-  private chatFunction = httpsCallable<ChatRequest, ChatResponse>(
-    this.functions, 
-    'chatWithDaisy'
-  );
+  private auth = getAuth(firebaseApp);
+  private functionUrl = `https://us-central1-${import.meta.env.VITE_FIREBASE_PROJECT_ID || 'warner-music-staging'}.cloudfunctions.net/chatWithDaisy`;
   private sessionId: string;
   private messageHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
   
@@ -58,10 +46,10 @@ export class DaisyOrchestratorClient {
   }
   
   /**
-   * Query the DaisyAI Orchestrator using Genkit-powered Cloud Function
+   * Query the DaisyAI Orchestrator using direct HTTP calls
    * @param message - User's query
    * @param userId - Unique user identifier
-   * @param _idToken - Not used with Genkit (auth handled automatically)
+   * @param _idToken - Not used (we get token from auth)
    * @returns Async iterable of response chunks
    */
   async *queryOrchestrator(
@@ -70,40 +58,63 @@ export class DaisyOrchestratorClient {
     _idToken?: string
   ): AsyncIterable<string> {
     try {
+      // Get current user's ID token
+      const currentUser = this.auth.currentUser;
+      if (!currentUser) {
+        throw new Error('Please sign in to use DaisyAI Chat');
+      }
+      
+      const idToken = await currentUser.getIdToken();
+      
       // Add message to history
       this.messageHistory.push({ role: 'user', content: message });
       
       // Keep only last 10 messages for context (to avoid token limits)
       const recentHistory = this.messageHistory.slice(-10);
       
-      // Call the Genkit-powered Cloud Function
-      const result = await this.chatFunction({
+      // Prepare request data
+      const requestData: ChatRequest = {
         message,
         sessionId: this.sessionId,
         context: {
           userId,
           previousMessages: recentHistory.slice(0, -1), // Exclude current message
         },
+      };
+      
+      // Call the function directly with HTTP
+      const response = await fetch(this.functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ data: requestData }), // Wrap in data field for compatibility
       });
       
-      const response = result.data;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const result = data.result || data; // Handle both wrapped and unwrapped responses
       
       // Add response to history
-      this.messageHistory.push({ role: 'assistant', content: response.response });
+      this.messageHistory.push({ role: 'assistant', content: result.response });
       
       // Log metadata for debugging (in production, send to analytics)
-      if (response.metadata) {
+      if (result.metadata) {
         console.log('Chat metadata:', {
-          model: response.metadata.model,
-          processingTime: `${response.metadata.processingTime}ms`,
-          tokensUsed: response.metadata.tokensUsed,
-          sessionId: response.metadata.sessionId,
+          model: result.metadata.model,
+          processingTime: `${result.metadata.processingTime}ms`,
+          sessionId: result.metadata.sessionId,
         });
       }
       
       // Yield the response as chunks for UI streaming effect
       // Split by sentences for natural streaming
-      const sentences = response.response.match(/[^.!?]+[.!?]+/g) || [response.response];
+      const sentences = result.response.match(/[^.!?]+[.!?]+/g) || [result.response];
       
       for (const sentence of sentences) {
         yield sentence;
@@ -115,13 +126,13 @@ export class DaisyOrchestratorClient {
       console.error('Error querying orchestrator:', error);
       
       // Handle specific error types
-      if (error.code === 'functions/unauthenticated') {
-        throw new Error('Please sign in to use DaisyAI Chat');
-      } else if (error.code === 'functions/permission-denied') {
-        throw new Error('You do not have permission to use this service');
-      } else if (error.code === 'functions/resource-exhausted') {
-        throw new Error('Service is currently busy. Please try again in a moment');
-      } else if (error.code === 'functions/deadline-exceeded') {
+      if (error.message.includes('sign in')) {
+        throw error;
+      } else if (error.message.includes('Unauthorized')) {
+        throw new Error('Authentication failed. Please sign in again');
+      } else if (error.message.includes('Invalid input')) {
+        throw new Error('Invalid message format. Please try again');
+      } else if (error.message.includes('timeout')) {
         throw new Error('Request timed out. Please try a simpler query');
       } else {
         // Generic error message for production

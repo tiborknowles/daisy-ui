@@ -4,8 +4,12 @@
  */
 
 import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { z } from 'zod';
+
+// Initialize Firebase Admin
+admin.initializeApp();
 
 // Initialize Gemini API
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'AIzaSyBD6mKc5JxZczg_0odXTBuTI8nIcyDJ2tU');
@@ -19,46 +23,66 @@ const ChatInputSchema = z.object({
     previousMessages: z.array(z.object({
       role: z.enum(['user', 'assistant']),
       content: z.string(),
-    })).max(10).optional(), // Limit context to prevent token overflow
-  }).optional(),
-});
-
-const ChatOutputSchema = z.object({
-  response: z.string(),
-  metadata: z.object({
-    model: z.string(),
-    tokensUsed: z.number().optional(),
-    processingTime: z.number(),
-    sessionId: z.string(),
+    })).max(10).optional(),
   }).optional(),
 });
 
 // Type definitions
 type ChatInput = z.infer<typeof ChatInputSchema>;
-type ChatOutput = z.infer<typeof ChatOutputSchema>;
 
-// Export the chat function with authentication using v1 API
+// Chat endpoint with CORS and authentication
 export const chatWithDaisy = functions
   .region('us-central1')
-  .https.onCall(async (data, context) => {
+  .https.onRequest(async (req, res) => {
+    // Set CORS headers
+    res.set('Access-Control-Allow-Origin', 'https://daisy-rocks.web.app');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.set('Access-Control-Max-Age', '3600');
+
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    // Only allow POST
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
     const startTime = Date.now();
 
-    // Require authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
-    }
-
-    // Validate input
-    let input: ChatInput;
     try {
-      input = ChatInputSchema.parse(data);
-    } catch (error) {
-      throw new functions.https.HttpsError('invalid-argument', 'Invalid input');
-    }
+      // Verify Firebase Auth token
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
 
-    const sessionId = input.sessionId || `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const idToken = authHeader.split('Bearer ')[1];
+      let decodedToken;
+      try {
+        decodedToken = await admin.auth().verifyIdToken(idToken);
+      } catch (error) {
+        res.status(401).json({ error: 'Invalid authentication token' });
+        return;
+      }
 
-    try {
+      // Validate input - Firebase callable functions wrap data in a 'data' field
+      const requestData = req.body.data || req.body;
+      let input: ChatInput;
+      try {
+        input = ChatInputSchema.parse(requestData);
+      } catch (error) {
+        res.status(400).json({ error: 'Invalid input format' });
+        return;
+      }
+
+      const sessionId = input.sessionId || `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
       // Build conversation context
       let conversationHistory = '';
       if (input.context?.previousMessages && input.context.previousMessages.length > 0) {
@@ -75,7 +99,8 @@ You have access to:
 - Deep understanding of music industry workflows, revenue models, and AI applications
 
 Provide helpful, accurate, and actionable insights. Be concise but thorough.
-Session: ${sessionId}`;
+Session: ${sessionId}
+User: ${decodedToken.email || decodedToken.uid}`;
 
       // Generate response using Gemini
       const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
@@ -84,28 +109,23 @@ Session: ${sessionId}`;
       const result = await model.generateContent(prompt);
       const response = result.response.text();
 
-      // Return structured response
-      const output: ChatOutput = {
-        response,
-        metadata: {
-          model: 'gemini-1.5-flash',
-          processingTime: Date.now() - startTime,
-          sessionId,
+      // Return response in Firebase callable function format
+      res.status(200).json({
+        result: {
+          response,
+          metadata: {
+            model: 'gemini-1.5-flash',
+            processingTime: Date.now() - startTime,
+            sessionId,
+          },
         },
-      };
+      });
 
-      return output;
     } catch (error) {
-      // Log error for monitoring
       functions.logger.error('DaisyChat error:', error);
-
-      // Re-throw with user-friendly message
-      throw new functions.https.HttpsError(
-        'internal',
-        error instanceof Error 
-          ? `Chat processing failed: ${error.message}`
-          : 'An unexpected error occurred while processing your request'
-      );
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Internal server error',
+      });
     }
   });
 
@@ -113,7 +133,6 @@ Session: ${sessionId}`;
 export const healthCheck = functions
   .region('us-central1')
   .https.onRequest(async (req, res) => {
-    // Set CORS headers
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, POST');
     
