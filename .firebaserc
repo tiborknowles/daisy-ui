@@ -1,0 +1,16 @@
+{
+  "projects": {
+    "default": "daisy-22176",
+    "production": "warner-music-staging"
+  },
+  "targets": {
+    "warner-music-staging": {
+      "hosting": {
+        "daisy-chat-ui": [
+          "warner-music-staging"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
