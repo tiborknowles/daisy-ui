@@ -4,7 +4,7 @@
  */
 
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { app } from '@/lib/firebase';
+import { firebaseApp } from '@/lib/firebase';
 
 interface AgentEngineConfig {
   projectId: string;
@@ -32,7 +32,7 @@ interface AgentResponse {
 
 export class DaisyOrchestratorClient {
   private config: AgentEngineConfig;
-  private functions = getFunctions(app);
+  private functions = getFunctions(firebaseApp);
   
   constructor() {
     this.config = {
@@ -46,14 +46,14 @@ export class DaisyOrchestratorClient {
   /**
    * Query the DaisyAI Orchestrator via Cloud Function
    * @param message - User's query
-   * @param userId - Unique user identifier
+   * @param userId - Unique user identifier (not used with Cloud Functions)
    * @param idToken - Firebase Auth ID token (not used with Cloud Functions)
    * @returns Async iterable of response chunks
    */
   async *queryOrchestrator(
     message: string, 
-    userId: string,
-    idToken?: string
+    _userId: string,
+    _idToken?: string
   ): AsyncIterable<string> {
     try {
       // Call the Cloud Function
